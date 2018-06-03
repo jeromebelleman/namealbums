@@ -1,0 +1,150 @@
+#! /usr/bin/env python
+
+'''
+Name albums
+'''
+
+import sys
+import os
+import argparse
+import subprocess
+import tempfile
+import logging
+import re
+import exifread
+import tqdm
+
+GOODRE = re.compile(r'^\d{4}(?:-\d\d(?:-\d\d)?)? ')
+RETIME = re.compile(r'[ :]')
+
+def getexiftime(othertags, tags):
+    '''
+    Get time from EXIF
+    '''
+
+    for tag in 'EXIF DateTimeOriginal', 'Image DateTime':
+        if tag in tags:
+            return RETIME.split(str(tags[tag]))
+    othertags.update(set(tags))
+
+
+def mksampling(sampling, othertags, otherexts, root, files):
+    '''
+    Make sampling
+    '''
+
+    for fle in files:
+        path = '%s/%s' % (root, fle)
+
+        # Strip against files with trailing space
+        ext = os.path.splitext(fle)[1][1:].strip().lower()
+        if ext in ('jpg', 'jpeg', 'png', 'tif', 'tiff', 'cr2', 'nef'):
+            try:
+                with open(path) as fhl:
+                    tags = exifread.process_file(fhl)
+                    if tags:
+                        time = getexiftime(othertags, tags)
+                        if time:
+                            if time < sampling['oldest']:
+                                sampling['oldest'] = time
+                            if time > sampling['newest']:
+                                sampling['newest'] = time
+                            if 'sample' not in sampling:
+                                sampling['sample'] = '%s/%s' % (root, fle)
+                            break
+            except IOError:
+                pass
+        else:
+            otherexts.add(ext)
+
+
+def report(tmp, album, sampling):
+    '''
+    Report
+    '''
+
+    # Print album
+    print >> tmp, "%s" % album
+
+    # Print sample
+    if 'sample' in sampling:
+        print >> tmp, "For instance %s" % sampling['sample']
+
+    # Print tree
+    # Setting stdout to tmp appears to overwrite part of tmp
+    proc = subprocess.Popen(['tree', '--noreport', album],
+                            stdout=subprocess.PIPE)
+    for line in proc.stdout:
+        print >> tmp, line,
+
+    # Print suggestion
+    if sampling['newest'] == ['0']:
+        print >> tmp, "mv %s" % album
+    else:
+        print >> tmp, "From %s-%s-%s to %s-%s-%s" % \
+            (sampling['oldest'][0],
+             sampling['oldest'][1],
+             sampling['oldest'][2],
+             sampling['newest'][0],
+             sampling['newest'][1],
+             sampling['newest'][2])
+        print >> tmp, "mv %s/%s-%s-%s %s" % \
+            (os.path.dirname(album),
+             sampling['oldest'][0],
+             sampling['oldest'][1],
+             sampling['oldest'][2],
+             os.path.basename(album))
+
+    print >> tmp
+
+
+def main():
+    '''
+    Main loop
+    '''
+
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Name albums.")
+    parser.add_argument('directory', nargs='+', help="album directory")
+    args = parser.parse_args()
+
+    # Hide messages from tqdm
+    logging.basicConfig(level=logging.CRITICAL)
+
+    # Open temporary file
+    tmp = tempfile.NamedTemporaryFile()
+
+    # Find files
+    othertags = set()
+    otherexts = set()
+    for album in tqdm.tqdm(args.directory):
+        if not GOODRE.match(os.path.basename(album)):
+            sampling = {'oldest': ['9'], 'newest': ['0']}
+            for root, _, files in os.walk(album):
+                mksampling(sampling, othertags, otherexts,
+                           root, sorted(files))
+                mksampling(sampling, othertags, otherexts,
+                           root, sorted(files, reverse=True))
+
+            # Write to report
+            report(tmp, album, sampling)
+
+    # Review report
+    tmp.flush()
+    subprocess.call(['vim', '+set ft=namegalleries', tmp.name])
+
+    # Report on other tags
+    if othertags:
+        print >> sys.stderr, "Couldn't always find expected time tags. Found:"
+        for tag in othertags:
+            print >> sys.stderr, "    %s" % tag
+
+    # Report on other extensions
+    if otherexts:
+        print >> sys.stderr, "Skipped extensions:"
+        for ext in otherexts:
+            print >> sys.stderr, "    '%s'" % ext
+
+
+if __name__ == '__main__':
+    sys.exit(main())
