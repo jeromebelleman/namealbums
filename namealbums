@@ -28,6 +28,30 @@ def getexiftime(othertags, tags):
     othertags.update(set(tags))
 
 
+def exreport(tmp, dryrun):
+    '''
+    Execute report
+    '''
+
+    with open(tmp.name) as fhl:
+        src = None
+        for line in fhl:
+            line = line.strip()
+
+            if line and not src:
+                src = line
+            elif src and line.startswith('@mv '):
+                dst = line[4:]
+                if src != dst and not os.path.lexists(dst):
+                    print 'mv "%s" "%s"' % (src, dst)
+                    if not dryrun:
+                        os.rename(src, dst)
+                else:
+                    print >> sys.stderr, "%s already exists" % dst
+            elif not line:
+                src = None
+
+
 def mksampling(sampling, othertags, otherexts, root, files):
     '''
     Make sampling
@@ -97,6 +121,7 @@ def main():
     # Parse arguments
     parser = argparse.ArgumentParser(description="Name albums.")
     parser.add_argument('directory', nargs='+', help="album directory")
+    parser.add_argument('--dryrun', action='store_true')
     args = parser.parse_args()
 
     # Hide messages from tqdm
@@ -132,9 +157,11 @@ def main():
         for ext in otherexts:
             print >> tmp, "    '%s'" % ext
 
-    # Review report
+    # Review and execute report
     tmp.flush()
     subprocess.call(['vim', '+set ft=namegalleries', tmp.name])
+    exreport(tmp, args.dryrun)
+
 
 if __name__ == '__main__':
     sys.exit(main())
