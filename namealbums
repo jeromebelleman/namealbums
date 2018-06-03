@@ -134,7 +134,7 @@ def main():
     othertags = set()
     otherexts = set()
     for album in tqdm.tqdm(args.directory):
-        if not GOODRE.match(os.path.basename(album)):
+        if os.path.isdir(album) and not GOODRE.match(os.path.basename(album)):
             sampling = {'oldest': ['9'], 'newest': ['0']}
             for root, _, files in os.walk(album):
                 mksampling(sampling, othertags, otherexts,
