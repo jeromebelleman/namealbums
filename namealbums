@@ -49,8 +49,6 @@ def mksampling(sampling, othertags, otherexts, root, files):
                                 sampling['oldest'] = time
                             if time > sampling['newest']:
                                 sampling['newest'] = time
-                            if 'sample' not in sampling:
-                                sampling['sample'] = '%s/%s' % (root, fle)
                             break
             except IOError:
                 pass
@@ -62,13 +60,6 @@ def report(tmp, album, sampling):
     '''
     Report
     '''
-
-    # Print album
-    print >> tmp, "%s" % album
-
-    # Print sample
-    if 'sample' in sampling:
-        print >> tmp, "For instance %s" % sampling['sample']
 
     # Print tree
     # Setting stdout to tmp appears to overwrite part of tmp
@@ -129,22 +120,21 @@ def main():
             # Write to report
             report(tmp, album, sampling)
 
-    # Review report
-    tmp.flush()
-    subprocess.call(['vim', '+set ft=namegalleries', tmp.name])
-
     # Report on other tags
     if othertags:
-        print >> sys.stderr, "Couldn't always find expected time tags. Found:"
+        print >> tmp, "Couldn't always find expected time tags. Found:"
         for tag in othertags:
-            print >> sys.stderr, "    %s" % tag
+            print >> tmp, "    %s" % tag
 
     # Report on other extensions
     if otherexts:
-        print >> sys.stderr, "Skipped extensions:"
+        print >> tmp, "Skipped extensions:"
         for ext in otherexts:
-            print >> sys.stderr, "    '%s'" % ext
+            print >> tmp, "    '%s'" % ext
 
+    # Review report
+    tmp.flush()
+    subprocess.call(['vim', '+set ft=namegalleries', tmp.name])
 
 if __name__ == '__main__':
     sys.exit(main())
