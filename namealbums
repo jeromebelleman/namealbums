@@ -97,6 +97,7 @@ def report(tmp, album, sampling):
     if sampling['newest'] == ['0']:
         print >> tmp, "mv %s" % album
     else:
+        dirname = os.path.dirname(album)
         print >> tmp, "From %s-%s-%s to %s-%s-%s" % \
             (sampling['oldest'][0],
              sampling['oldest'][1],
@@ -104,8 +105,8 @@ def report(tmp, album, sampling):
              sampling['newest'][0],
              sampling['newest'][1],
              sampling['newest'][2])
-        print >> tmp, "mv %s/%s-%s-%s %s" % \
-            (os.path.dirname(album),
+        print >> tmp, "mv %s%s-%s-%s %s" % \
+            (dirname + '/' if dirname else '',
              sampling['oldest'][0],
              sampling['oldest'][1],
              sampling['oldest'][2],
