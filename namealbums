@@ -18,6 +18,9 @@ import tqdm
 GOODRE = re.compile(r'^\d{4}s?(?:-\d\d(?:-\d\d)?)? ')
 RETIME = re.compile(r'[ :]')
 
+class NoExif(Exception):
+    pass
+
 def getexiftime(othertags, tags):
     '''
     Get time from EXIF
@@ -27,6 +30,7 @@ def getexiftime(othertags, tags):
         if tag in tags:
             return RETIME.split(str(tags[tag]))
     othertags.update(set(tags))
+    raise NoExif
 
 
 def exreport(tmp, dryrun):
@@ -53,7 +57,7 @@ def exreport(tmp, dryrun):
                 src = None
 
 
-def mksampling(sampling, othertags, otherexts, root, files):
+def mksampling(cfg, sampling, othertags, otherexts, root, files):
     '''
     Make sampling
     '''
@@ -62,23 +66,51 @@ def mksampling(sampling, othertags, otherexts, root, files):
         path = '%s/%s' % (root, fle)
 
         # Strip against files with trailing space
-        ext = os.path.splitext(fle)[1][1:].strip().lower()
-        if ext in ('jpg', 'jpeg', 'png', 'tif', 'tiff', 'cr2', 'nef'):
+        fleroot, ext = os.path.splitext(fle)
+        ext = ext[1:].strip().lower()
+        if ext in cfg['exts']:
             try:
                 with open(path) as fhl:
-                    tags = exifread.process_file(fhl)
-                    if tags:
-                        time = getexiftime(othertags, tags)
-                        if time:
+                    try:
+                        tags = exifread.process_file(fhl)
+                        if tags:
+                            time = getexiftime(othertags, tags)
                             if time < sampling['oldest']:
                                 sampling['oldest'] = time
                             if time > sampling['newest']:
                                 sampling['newest'] = time
-                            break
+                            sampling['method'] = 'Direct'
+                            return
+                        else:
+                            raise NoExif
+                    except NoExif:
+                        if cfg['searchrelated']:
+                            for subroot, _, subfiles in os.walk(os.getcwd()):
+                                for fle in subfiles:
+                                    path = '%s/%s' % (subroot, fle)
+                                    if re.match(fleroot[:-1] + '.*', fle):
+                                        ext = os.path.splitext(fle)[1]
+                                        ext = ext[1:].strip().lower()
+                                        if ext in cfg['exts']:
+                                            try:
+                                                with open(path) as fhl:
+                                                    tags = exifread.process_file(fhl)
+                                                    if tags:
+                                                        try:
+                                                            time = getexiftime(othertags, tags)
+                                                            if time < sampling['oldest']:
+                                                                sampling['oldest'] = time
+                                                            if time > sampling['newest']:
+                                                                sampling['newest'] = time
+                                                            sampling['method'] = 'From %s' % path
+                                                            return
+                                                        except NoExif:
+                                                            pass
+                                            except IOError:
+                                                pass
             except IOError:
                 pass
-        else:
-            otherexts.add(ext)
+        otherexts.add(ext)
 
 
 def report(tmp, album, sampling):
@@ -98,6 +130,7 @@ def report(tmp, album, sampling):
         print >> tmp, "mv %s" % album
     else:
         dirname = os.path.dirname(album)
+        print >> tmp, sampling['method']
         print >> tmp, "From %s-%s-%s to %s-%s-%s" % \
             (sampling['oldest'][0],
              sampling['oldest'][1],
@@ -148,9 +181,9 @@ def main():
             if not (cfg['skipgood'] and GOODRE.match(os.path.basename(album))):
                 sampling = {'oldest': ['9'], 'newest': ['0']}
                 for root, _, files in os.walk(album):
-                    mksampling(sampling, othertags, otherexts,
+                    mksampling(cfg, sampling, othertags, otherexts,
                                root, sorted(files))
-                    mksampling(sampling, othertags, otherexts,
+                    mksampling(cfg, sampling, othertags, otherexts,
                                root, sorted(files, reverse=True))
 
                 # Write to report
