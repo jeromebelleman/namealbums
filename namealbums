@@ -128,10 +128,11 @@ def main():
 
     # Load config
     try:
-        with open(os.path.expanduser('~/.namegalleries.yaml')) as fhl:
+        with open(os.path.expanduser('~/.namealbums.yaml')) as fhl:
             cfg = yaml.load(fhl)
-    except IOError:
-        cfg = {}
+    except IOError, exc:
+        print >> sys.stderr, exc
+        return 1
 
     # Hide messages from tqdm
     logging.basicConfig(level=logging.CRITICAL)
@@ -168,7 +169,7 @@ def main():
 
     # Review and execute report
     tmp.flush()
-    subprocess.call(['vim', '+set ft=namegalleries', tmp.name])
+    subprocess.call(['vim', '+set ft=namealbums'] + cfg['vim'] + [tmp.name])
     exreport(tmp, args.dryrun)
 
 
