@@ -19,18 +19,36 @@ GOODRE = re.compile(r'^\d{4}s?(?:-\d\d(?:-\d\d)?)? ')
 RETIME = re.compile(r'[ :]')
 
 class NoExif(Exception):
+    '''
+    Missing EXIF exception
+    '''
     pass
 
-def getexiftime(othertags, tags):
+
+def setexiftime(sampling, othertags, path):
     '''
-    Get time from EXIF
+    Set EXIF time in sampling
     '''
 
-    for tag in 'EXIF DateTimeOriginal', 'Image DateTime':
-        if tag in tags:
-            return RETIME.split(str(tags[tag]))
-    othertags.update(set(tags))
-    raise NoExif
+    # Get suitable time tag
+    try:
+        with open(path) as fhl:
+            tags = exifread.process_file(fhl)
+            for tag in 'EXIF DateTimeOriginal', 'Image DateTime':
+                if tag in tags:
+                    time = RETIME.split(str(tags[tag]))
+                    break
+            else:
+                othertags.update(set(tags))
+                raise NoExif
+
+        # Set the sampling
+        if time < sampling['oldest']:
+            sampling['oldest'] = time
+        if time > sampling['newest']:
+            sampling['newest'] = time
+    except IOError:
+        raise NoExif
 
 
 def exreport(tmp, dryrun):
@@ -57,6 +75,17 @@ def exreport(tmp, dryrun):
                 src = None
 
 
+def splitext(path):
+    '''
+    Split into (root, ext) with ext without the dot, stripped and lowercase
+    '''
+
+    root, ext = os.path.splitext(path)
+
+    # Strip against files with trailing space
+    return root, ext[1:].strip().lower()
+
+
 def mksampling(cfg, sampling, othertags, otherexts, root, files):
     '''
     Make sampling
@@ -64,53 +93,29 @@ def mksampling(cfg, sampling, othertags, otherexts, root, files):
 
     for fle in files:
         path = '%s/%s' % (root, fle)
-
-        # Strip against files with trailing space
-        fleroot, ext = os.path.splitext(fle)
-        ext = ext[1:].strip().lower()
-        if ext in cfg['exts']:
-            try:
-                with open(path) as fhl:
-                    try:
-                        tags = exifread.process_file(fhl)
-                        if tags:
-                            time = getexiftime(othertags, tags)
-                            if time < sampling['oldest']:
-                                sampling['oldest'] = time
-                            if time > sampling['newest']:
-                                sampling['newest'] = time
-                            sampling['method'] = 'Direct'
-                            return
-                        else:
-                            raise NoExif
-                    except NoExif:
-                        if cfg['searchrelated']:
-                            for subroot, _, subfiles in os.walk(os.getcwd()):
-                                for fle in subfiles:
-                                    path = '%s/%s' % (subroot, fle)
-                                    if re.match(fleroot[:-1] + '.*', fle):
-                                        ext = os.path.splitext(fle)[1]
-                                        ext = ext[1:].strip().lower()
-                                        if ext in cfg['exts']:
-                                            try:
-                                                with open(path) as fhl:
-                                                    tags = exifread.process_file(fhl)
-                                                    if tags:
-                                                        try:
-                                                            time = getexiftime(othertags, tags)
-                                                            if time < sampling['oldest']:
-                                                                sampling['oldest'] = time
-                                                            if time > sampling['newest']:
-                                                                sampling['newest'] = time
-                                                            sampling['method'] = 'From %s' % path
-                                                            return
-                                                        except NoExif:
-                                                            pass
-                                            except IOError:
-                                                pass
-            except IOError:
-                pass
-        otherexts.add(ext)
+        fleroot, ext = splitext(fle)
+        try:
+            if ext in cfg['exts']:
+                setexiftime(sampling, othertags, path)
+                sampling['method'] = 'Direct'
+                break
+            else:
+                otherexts.add(ext)
+        except NoExif:
+            if cfg['searchrelated']:
+                for subroot, _, subfiles in os.walk(os.getcwd()):
+                    for subfle in subfiles:
+                        path = '%s/%s' % (subroot, subfle)
+                        if re.match(fleroot[:-1] + '.*', subfle):
+                            if splitext(subfle)[1] in cfg['exts']:
+                                try:
+                                    setexiftime(sampling, othertags, path)
+                                    sampling['method'] = 'From %s' % path
+                                    break
+                                except NoExif:
+                                    pass
+                            else:
+                                otherexts.add(ext)
 
 
 def report(tmp, album, sampling):
