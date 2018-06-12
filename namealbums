@@ -35,7 +35,7 @@ def setexiftime(sampling, othertags, path):
         with open(path) as fhl:
             tags = exifread.process_file(fhl)
             for tag in 'EXIF DateTimeOriginal', 'Image DateTime':
-                if tag in tags:
+                if tag in tags and str(tags[tag]):
                     time = RETIME.split(str(tags[tag]))
                     break
             else:
