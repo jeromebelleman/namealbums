@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import logging
 import re
+import shutil
 import yaml
 import exifread
 import tqdm
@@ -58,13 +59,29 @@ def exreport(tmp, dryrun):
 
     with open(tmp.name) as fhl:
         src = None
+        paths = []
         for line in fhl:
             line = line.strip()
 
             if line and not src:
                 src = line
-            elif src and line.startswith('@mv '):
-                dst = line[4:]
+                paths.append(line)
+            elif line.startswith('@move '):
+                dst = ' '.join(line.split()[1:])
+
+                if not os.path.isdir(dst):
+                    print 'mkdir -p %s' % dst
+                    if not dryrun:
+                        os.makedirs(dst)
+
+                for path in paths:
+                    basename = os.path.basename(path)
+                    if not os.path.lexists('%s/%s' % (dst, basename)):
+                        print 'mv %s %s' % (path, dst)
+                        if not dryrun:
+                            shutil.move(path, dst)
+            elif line.startswith('@rename '):
+                dst = ' '.join(line.split()[1:])
                 if src != dst and not os.path.lexists(dst):
                     print 'mv "%s" "%s"' % (src, dst)
                     if not dryrun:
@@ -73,6 +90,9 @@ def exreport(tmp, dryrun):
                     print >> sys.stderr, "%s already exists" % dst
             elif not line:
                 src = None
+                paths = []
+            else:
+                paths.append(line)
 
 
 def splitext(path):
@@ -123,16 +143,15 @@ def report(tmp, album, sampling):
     Report
     '''
 
-    # Print tree
-    # Setting stdout to tmp appears to overwrite part of tmp
-    proc = subprocess.Popen(['tree', '--noreport', album],
-                            stdout=subprocess.PIPE)
-    for line in proc.stdout:
-        print >> tmp, line,
+    # Print files
+    print >> tmp, album
+    for root, _, files in os.walk(album):
+        for filename in files:
+            print >> tmp, '%s/%s' % (root, filename)
 
     # Print suggestion
     if sampling['newest'] == ['0']:
-        print >> tmp, "mv %s" % album
+        print >> tmp, "rename %s" % album
     else:
         dirname = os.path.dirname(album)
         print >> tmp, sampling['method']
@@ -143,7 +162,7 @@ def report(tmp, album, sampling):
              sampling['newest'][0],
              sampling['newest'][1],
              sampling['newest'][2])
-        print >> tmp, "mv %s%s-%s-%s %s" % \
+        print >> tmp, "rename %s%s-%s-%s %s" % \
             (dirname + '/' if dirname else '',
              sampling['oldest'][0],
              sampling['oldest'][1],
