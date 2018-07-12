@@ -77,10 +77,7 @@ def exreport(tmp, dryrun):
         for line in tqdm.tqdm(lines):
             line = line.strip()
 
-            if line and not src:
-                src = line
-                paths.append(line)
-            elif line.startswith('@move '):
+            if line.startswith('@move '):
                 dst = ' '.join(line.split()[1:])
 
                 if not os.path.isdir(dst):
@@ -108,11 +105,12 @@ def exreport(tmp, dryrun):
                         os.rename(src, dst)
                 else:
                     tqdm.tqdm.write("%s already exists" % dst, file=sys.stderr)
-            elif not line:
+            elif line:
+                src = line
+                paths.append(line)
+            else:
                 src = None
                 paths = []
-            else:
-                paths.append(line)
 
 
 def splitext(path):
@@ -172,7 +170,6 @@ def report(tmp, album, sampling):
     '''
 
     # Print files
-    print >> tmp, album
     date, previousdate = None, None
     for root, _, files in os.walk(album):
         for filename in sorted(files):
@@ -197,6 +194,7 @@ def report(tmp, album, sampling):
         print >> tmp, sampling['method']
         print >> tmp, "From %s to %s" % (fmtdate(sampling['oldest']),
                                          fmtdate(sampling['newest']))
+        print >> tmp, album
         print >> tmp, "rename %s%s %s" % (dirname + '/' if dirname else '',
                                           fmtdate(sampling['oldest']),
                                           os.path.basename(album))
