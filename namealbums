@@ -71,9 +71,10 @@ def exreport(tmp, dryrun):
     '''
 
     with open(tmp.name) as fhl:
+        lines = fhl.read().splitlines()
         src = None
         paths = []
-        for line in fhl:
+        for line in tqdm.tqdm(lines):
             line = line.strip()
 
             if line and not src:
@@ -83,13 +84,16 @@ def exreport(tmp, dryrun):
                 dst = ' '.join(line.split()[1:])
 
                 if not os.path.isdir(dst):
-                    print 'mkdir -p %s' % dst
+                    tqdm.tqdm.write('mkdir -p %s' % dst)
                     if not dryrun:
                         os.makedirs(dst)
 
-                for path in tqdm.tqdm(paths):
+                for path in paths:
                     basename = os.path.basename(path)
-                    if not os.path.lexists('%s/%s' % (dst, basename)):
+                    if os.path.lexists('%s/%s' % (dst, basename)):
+                        tqdm.tqdm.write('%s/%s already exists' % \
+                                        (dst, basename))
+                    else:
                         tqdm.tqdm.write('mv %s %s' % (path, dst))
                         if not dryrun:
                             try:
@@ -99,11 +103,11 @@ def exreport(tmp, dryrun):
             elif line.startswith('@rename '):
                 dst = ' '.join(line.split()[1:])
                 if src != dst and not os.path.lexists(dst):
-                    print 'mv "%s" "%s"' % (src, dst)
+                    tqdm.tqdm.write('mv "%s" "%s"' % (src, dst))
                     if not dryrun:
                         os.rename(src, dst)
                 else:
-                    print >> sys.stderr, "%s already exists" % dst
+                    tqdm.tqdm.write("%s already exists" % dst, file=sys.stderr)
             elif not line:
                 src = None
                 paths = []
