@@ -19,35 +19,48 @@ import tqdm
 GOODRE = re.compile(r'^\d{4}s?(?:-\d\d(?:-\d\d)?)? ')
 RETIME = re.compile(r'[ :]')
 
+
 class NoExif(Exception):
     '''
     Missing EXIF exception
     '''
-    pass
+
+    def __init__(self, tags=None):
+        super(NoExif, self).__init__()
+        self.tags = tags
 
 
-def setexiftime(sampling, othertags, path):
+def getexifdate(path):
+    '''
+    Get date in 3-components list from exif data
+    '''
+
+    with open(path) as fhl:
+        tags = exifread.process_file(fhl)
+        for tag in 'EXIF DateTimeOriginal', 'Image DateTime':
+            if tag in tags and str(tags[tag]):
+                return RETIME.split(str(tags[tag]))
+
+        raise NoExif(tags)
+
+
+def setexifdate(sampling, othertags, path):
     '''
     Set EXIF time in sampling
     '''
 
     # Get suitable time tag
     try:
-        with open(path) as fhl:
-            tags = exifread.process_file(fhl)
-            for tag in 'EXIF DateTimeOriginal', 'Image DateTime':
-                if tag in tags and str(tags[tag]):
-                    time = RETIME.split(str(tags[tag]))
-                    break
-            else:
-                othertags.update(set(tags))
-                raise NoExif
+        time = getexifdate(path)
 
         # Set the sampling
         if time < sampling['oldest']:
             sampling['oldest'] = time
         if time > sampling['newest']:
             sampling['newest'] = time
+    except NoExif, exc:
+        othertags.update(set(exc.tags))
+        raise
     except IOError:
         raise NoExif
 
@@ -74,12 +87,15 @@ def exreport(tmp, dryrun):
                     if not dryrun:
                         os.makedirs(dst)
 
-                for path in paths:
+                for path in tqdm.tqdm(paths):
                     basename = os.path.basename(path)
                     if not os.path.lexists('%s/%s' % (dst, basename)):
-                        print 'mv %s %s' % (path, dst)
+                        tqdm.tqdm.write('mv %s %s' % (path, dst))
                         if not dryrun:
-                            shutil.move(path, dst)
+                            try:
+                                shutil.move(path, dst)
+                            except IOError, exc:
+                                tqdm.tqdm.write('*** %s' % exc, file=sys.stderr)
             elif line.startswith('@rename '):
                 dst = ' '.join(line.split()[1:])
                 if src != dst and not os.path.lexists(dst):
@@ -116,7 +132,7 @@ def mksampling(cfg, sampling, othertags, otherexts, root, files):
         fleroot, ext = splitext(fle)
         try:
             if ext in cfg['exts']:
-                setexiftime(sampling, othertags, path)
+                setexifdate(sampling, othertags, path)
                 sampling['method'] = 'Direct'
                 break
             else:
@@ -129,13 +145,21 @@ def mksampling(cfg, sampling, othertags, otherexts, root, files):
                         if re.match(fleroot[:-1] + '.*', subfle):
                             if splitext(subfle)[1] in cfg['exts']:
                                 try:
-                                    setexiftime(sampling, othertags, path)
+                                    setexifdate(sampling, othertags, path)
                                     sampling['method'] = 'From %s' % path
                                     break
                                 except NoExif:
                                     pass
                             else:
                                 otherexts.add(ext)
+
+
+def fmtdate(split):
+    '''
+    Format date
+    '''
+
+    return '%s-%s-%s' % (split[0], split[1], split[2])
 
 
 def report(tmp, album, sampling):
@@ -145,9 +169,21 @@ def report(tmp, album, sampling):
 
     # Print files
     print >> tmp, album
+    date, previousdate = None, None
     for root, _, files in os.walk(album):
-        for filename in files:
-            print >> tmp, '%s/%s' % (root, filename)
+        for filename in sorted(files):
+            path = '%s/%s' % (root, filename)
+            try:
+                date = fmtdate(getexifdate(path))
+                if previousdate and date != previousdate:
+                    print >> tmp, "move %s path" % previousdate
+                previousdate = date
+            except NoExif:
+                if previousdate:
+                    print >> tmp, "move %s path" % previousdate
+            print >> tmp, path
+    if date:
+        print >> tmp, "move %s path" % date
 
     # Print suggestion
     if sampling['newest'] == ['0']:
@@ -155,19 +191,11 @@ def report(tmp, album, sampling):
     else:
         dirname = os.path.dirname(album)
         print >> tmp, sampling['method']
-        print >> tmp, "From %s-%s-%s to %s-%s-%s" % \
-            (sampling['oldest'][0],
-             sampling['oldest'][1],
-             sampling['oldest'][2],
-             sampling['newest'][0],
-             sampling['newest'][1],
-             sampling['newest'][2])
-        print >> tmp, "rename %s%s-%s-%s %s" % \
-            (dirname + '/' if dirname else '',
-             sampling['oldest'][0],
-             sampling['oldest'][1],
-             sampling['oldest'][2],
-             os.path.basename(album))
+        print >> tmp, "From %s to %s" % (fmtdate(sampling['oldest']),
+                                         fmtdate(sampling['newest']))
+        print >> tmp, "rename %s%s %s" % (dirname + '/' if dirname else '',
+                                          fmtdate(sampling['oldest']),
+                                          os.path.basename(album))
 
     print >> tmp
 
